@@ -1,12 +1,14 @@
-Penelope
+How to run Penelope.
 ========
 
 Prediction Testing Tool
-     Monitor
+
+    Monitor
     Use clean class files (not already instrumented)
     The tool was tuned on Java 1.6 (for Java 1.7 please use the option "-XX:-UseSplitVerifier")
     run "java Monitor -U mainclass.class File1.class File2.class"
     run "java program"
+    
 
     The output of this phase is program.monitored and will contain the observed run.
         Example of observed run (VT3)
