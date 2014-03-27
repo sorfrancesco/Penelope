@@ -1,0 +1,4 @@
+./PREPROCESS $1
+./Makefile
+time ./NESTEDCheck $1_mod
+time ./SCHEDULER $1_mod.nrun $1_mod.pattern

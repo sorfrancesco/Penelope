@@ -1,0 +1,98 @@
+# $1: patternFile  $2:origFileName like Eledata_mod.nrun  $3:feasibilityFile like Eledata_mod.patternOut
+
+# Store pattern file name
+FILE=""
+origFileName="$2"
+feasFileName="$3"
+ 
+# Make sure we get file name as command line argument
+# Else read it from standard input device
+if [ "$1" == "" ]; then
+   FILE="/dev/stdin"
+else
+   FILE="$1"
+   # make sure file exist and readable
+   if [ ! -f $FILE ]; then
+  	echo "$FILE : does not exists"
+  	exit 1
+   elif [ ! -r $FILE ]; then
+  	echo "$FILE: can not read"
+  	exit 2
+   fi
+fi
+# read $FILE using the file descriptors
+
+
+before="$(date +%s)"
+
+if [ -f $origFileName'_smt_feas' ];
+then
+	rm $origFileName'_smt_feas'
+fi
+
+
+# Set loop separator to end of line
+x=1
+feasibility=0
+
+BAKIFS=$IFS
+IFS=$(echo -en "\n\b")
+exec 3<&0
+exec 0<"$FILE"
+while read -r line
+do
+	
+	#feasibility=`sed -n 10 < $feasFileName`
+
+	feasibility=`head -$x $feasFileName|tail -1`
+	
+	
+	#echo $feasibility
+
+	if [ $feasibility -eq 0 ];
+	then 
+
+		#java EncodingOptIgnoreNonMatchingReads $origFileName'_smt_'$x  $origFileName'_val_'$x $line
+		java EncodingOpt $origFileName'_smt_'$x  $origFileName'_val_'$x $line
+
+		./z3/bin/z3 -m $origFileName'_smt_'$x'_cut_encoding' > $origFileName'_smt_'$x'_out'
+       	java buildSchedule $line $origFileName'_smt_'$x'_out' $origFileName'_smt_'$x'_discard'
+	
+		if [ -f $origFileName$x ];
+		then
+    			rm $origFileName$x
+		fi
+	
+	
+
+		if [[ `grep Tinit $origFileName'_smt_'$x'_out'| wc -l` -eq 0 ]];
+		then
+       		echo "0" >> $origFileName'_smt_feas' 
+		else
+			echo "1" >> $origFileName'_smt_feas'
+			cat $origFileName$x'_pre' $origFileName'_smt_'$x'_out_nrun' >> $origFileName$x
+		fi
+
+
+		rm $origFileName'_smt_'$x'_out'
+		rm $origFileName'_smt_'$x'_out_tempRun'
+		rm $origFileName'_smt_'$x'_out_nrun'
+
+	else
+		echo "-1" >> $origFileName'_smt_feas'
+	fi
+
+	x=$(( $x + 1 ))
+done
+exec 0<&3
+
+cp $origFileName'_smt_feas' $feasFileName
+rm $origFileName'_smt_feas'
+
+after="$(date +%s)"
+elapsed_seconds="$(expr $after - $before)"
+echo Elapsed time for code block: $elapsed_seconds
+
+ 
+# restore $IFS which was used to determine what the field separators are
+IFS=$BAKIFS

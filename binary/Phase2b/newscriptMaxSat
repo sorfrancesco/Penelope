@@ -1,0 +1,177 @@
+# $1: patternFile  $2:origFileName like Eledata_mod.nrun  $3:feasibilityFile like Eledata_mod.patternOut
+
+# Store pattern file name
+FILE=""
+origFileName="$2"
+feasFileName="$3"
+ 
+# Make sure we get file name as command line argument
+# Else read it from standard input device
+if [ "$1" == "" ]; then
+   FILE="/dev/stdin"
+else
+   FILE="$1"
+   # make sure file exist and readable
+   if [ ! -f $FILE ]; then
+  	echo "$FILE : does not exists"
+  	exit 1
+   elif [ ! -r $FILE ]; then
+  	echo "$FILE: can not read"
+  	exit 2
+   fi
+fi
+# read $FILE using the file descriptors
+
+
+before="$(date +%s)"
+
+if [ -f $origFileName'_smt_feas' ];
+then
+	rm $origFileName'_smt_feas'
+fi
+
+# Set loop separator to end of line
+x=1
+feasibility=0
+
+BAKIFS=$IFS
+IFS=$(echo -en "\n\b")
+exec 3<&0
+exec 0<"$FILE"
+
+
+limit=0
+
+
+if [ -f $origFileName'_smt_maxsat' ];
+then
+	rm $origFileName'_smt_maxsat'
+fi
+
+
+while read -r line
+do
+	
+	#feasibility=`sed -n 10 < $feasFileName`
+
+	feasibility=`head -$x $feasFileName|tail -1`
+	
+	
+	#echo $feasibility
+
+	if [ $feasibility -eq 0 ];
+	then 
+
+		limit=0
+
+		java EncodingOpt $origFileName'_smt_'$x  $origFileName'_val_'$x $line 
+
+		#./time_die 10 ./z3 -m $origFileName'_smt_'$x'_cut_encoding' > $origFileName'_smt_'$x'_out'
+		./z3/bin/z3 -m $origFileName'_smt_'$x'_cut_encoding' > $origFileName'_smt_'$x'_out'
+
+
+		if [[ `grep Tinit $origFileName'_smt_'$x'_out'| wc -l` -eq 0 ]];
+		then
+			echo $x'_MAXSAT' >> $origFileName'_smt_maxsat'
+
+
+			java EncodingOptMaxSat $origFileName'_smt_'$x  $origFileName'_val_'$x $line
+		
+			if [ -f $origFileName'_smt_'$x'_encoding' ];
+			then
+    				rm $origFileName'_smt_'$x'_encoding'
+			fi
+
+
+			cat $origFileName'_smt_'$x'_encoding1'  $origFileName'_smt_'$x'_encoding2' >> $origFileName'_smt_'$x'_encoding'
+
+			#./time_die 10 ./z3 -m $origFileName'_smt_'$x'_encoding' > $origFileName'_smt_'$x'_out'
+			./z3/bin/z3 -m $origFileName'_smt_'$x'_encoding' > $origFileName'_smt_'$x'_out'
+
+       		limit=0
+		
+		
+			#while [[ `grep Tinit $origFileName'_smt_'$x'_out'| wc -l` -eq 0  && $limit -lt 5 ]];
+			while [[ `grep Tinit $origFileName'_smt_'$x'_out'| wc -l` -eq 0 && $limit -lt 50 ]];
+
+			do
+       			
+				limit=$(( $limit + 1 ))
+
+				val=`sed -n '1p' $origFileName'_smt_'$x'_encoding2'`
+				newVal=$(( $val - 1 ))
+				rm $origFileName'_smt_'$x'_encoding2'
+				echo $newVal >> $origFileName'_smt_'$x'_encoding2'
+				echo ')))' >> $origFileName'_smt_'$x'_encoding2'
+	
+				echo $newVal	
+
+
+				if [ -f $origFileName'_smt_'$x'_encoding' ];
+				then
+    					rm $origFileName'_smt_'$x'_encoding'
+				fi
+
+	
+				cat $origFileName'_smt_'$x'_encoding1'  $origFileName'_smt_'$x'_encoding2' >> $origFileName'_smt_'$x'_encoding'
+
+
+				#./time_die 10 ./z3 -m $origFileName'_smt_'$x'_encoding' > $origFileName'_smt_'$x'_out'
+				./z3/bin/z3 -m $origFileName'_smt_'$x'_encoding' > $origFileName'_smt_'$x'_out'
+			done  
+
+              else     	
+			echo $x'_SMT' >> $origFileName'_smt_maxsat'
+		fi
+
+		if [ -f $origFileName$x ];
+		then
+    			rm $origFileName$x
+		fi
+
+		java buildSchedule $line $origFileName'_smt_'$x'_out' $origFileName'_smt_'$x'_discard'
+
+		if [ $limit -lt 50 ];
+		then
+
+			echo "1" >> $origFileName'_smt_feas'
+			cat $origFileName$x'_pre' $origFileName'_smt_'$x'_out_nrun' >> $origFileName$x
+		else
+			echo "0" >> $origFileName'_smt_feas'
+		fi
+
+
+		if [ -f $origFileName'_smt_'$x'_out' ];
+		then
+			rm $origFileName'_smt_'$x'_out'
+		fi
+
+		if [ -f $origFileName'_smt_'$x'_out_tempRun' ];
+		then
+			rm $origFileName'_smt_'$x'_out_tempRun'
+		fi
+
+		if [ -f $origFileName'_smt_'$x'_out_nrun' ];
+		then
+			rm $origFileName'_smt_'$x'_out_nrun'
+		fi
+		
+
+	else
+		echo "-1" >> $origFileName'_smt_feas'
+	fi
+
+	x=$(( $x + 1 ))
+done
+exec 0<&3
+
+cp $origFileName'_smt_feas' $feasFileName
+rm $origFileName'_smt_feas'
+
+after="$(date +%s)"
+elapsed_seconds="$(expr $after - $before)"
+echo Elapsed time for code block: $elapsed_seconds
+
+ 
+# restore $IFS which was used to determine what the field separators are
+IFS=$BAKIFS
